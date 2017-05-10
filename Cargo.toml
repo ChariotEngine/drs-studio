@@ -1,0 +1,8 @@
+[package]
+authors = ["Taryn Hill <taryn@phrohdoh.com>"]
+name = "drs-studio"
+version = "0.1.0"
+
+[dependencies]
+chariot_drs = "0.1"
+clap = "2.24"
