@@ -81,7 +81,7 @@ fn cmd_extract(args: &clap::ArgMatches) {
             .write(true)
             .truncate(true)
             .create(true)
-            .open(output_dir)
+            .open(&output_path)
             .expect(&format!("Failed to setup file {}", &output_path.display()));
 
         f.write(&contents).expect(&format!("Failed to write to {}", &output_path.display()));
