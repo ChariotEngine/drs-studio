@@ -27,12 +27,12 @@ You can invoke this directly or put it somewhere on your shell's `$PATH`.
 ## Running
 
 ```sh
-$ cargo run -- extract --drs-path /media/AOE/GAME/DATA/GRAPHICS.DRS --file-name 00412.slp
+$ cargo run -- extract --drs-path /media/AOE/GAME/DATA/GRAPHICS.DRS --file-names 00412.slp
 ```
 
 ## License
 
-[MIT](LICENSE.md)
+[MIT](LICENSE)
 
 ## Contributing
 
