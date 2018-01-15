@@ -12,10 +12,6 @@ Age of Empires uses a home-grown format ("DRS") to store palettes, sprites, and 
 
 This format is conceptually similar to tar which contains other files but does not perform compression.
 
-## License
-
-MIT
-
 ## Building
 
 You must have the [Rust](https://rust-lang.org) toolchain installed (which includes `cargo`).
