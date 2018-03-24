@@ -49,6 +49,7 @@ use gtk::{
 #[derive(Debug, PartialEq, Eq)]
 enum Column {
     Name,
+    Type,
     Size,
     Offset,
 }
@@ -57,8 +58,9 @@ impl Into<u32> for Column {
     fn into(self) -> u32 {
         match self {
             Column::Name => 0,
-            Column::Size => 1,
-            Column::Offset => 2,
+            Column::Type => 1,
+            Column::Size => 2,
+            Column::Offset => 3,
         }
     }
 }
@@ -67,8 +69,9 @@ impl Into<i32> for Column {
     fn into(self) -> i32 {
         match self {
             Column::Name => 0,
-            Column::Size => 1,
-            Column::Offset => 2,
+            Column::Type => 1,
+            Column::Size => 2,
+            Column::Offset => 3,
         }
     }
 }
@@ -97,7 +100,7 @@ fn main() {
     window.get_preferred_width();
     window.set_default_size(1440, 900);
 
-    let ei_store = ListStore::new(&[Type::String, Type::String, Type::String]);
+    let ei_store = ListStore::new(&[Type::String, Type::String, Type::String, Type::String]);
 
     macro_rules! add_column {
         ($tree:ident, $title:expr, $id:expr) => {{
@@ -115,6 +118,7 @@ fn main() {
     entryinfo_tree.set_headers_visible(true);
 
     add_column!(entryinfo_tree, "Name", Column::Name.into());
+    add_column!(entryinfo_tree, "Type", Column::Type.into());
     add_column!(entryinfo_tree, "Size", Column::Size.into());
     add_column!(entryinfo_tree, "Offset", Column::Offset.into());
 
@@ -174,32 +178,34 @@ fn main() {
 
                 let mut a = Archive::read_from_file(&archive_path).unwrap();
                 {
-                    let table_slp = match a.find_table(DrsFileType::Slp) {
-                        Some(table) => table,
-                        None => panic!("DRS {} does not contain an SLP table.", archive_path),
-                    };
+                    let tables = &a.tables;
 
                     ei_store.clear();
-                    for entry in table_slp.entries.iter() {
-                        let float_len = entry.file_size as f32;
 
-                        let formatted_size = match binary_prefix(float_len) {
-                            Standalone(bytes) => format!("{} B", bytes),
-                            Prefixed(prefix, n) => format!("{:.2} {}B", n, prefix),
-                        };
+                    for table in tables.iter() {
+                        for entry in table.entries.iter() {
+                            let float_len = entry.file_size as f32;
 
-                        ei_store.insert_with_values(None,
-                            &[
-                                Column::Name.into(),
-                                Column::Size.into(),
-                                Column::Offset.into(),
-                            ],
-                            &[
-                                &entry.file_id.to_string(),
-                                &formatted_size,
-                                &format!("{:#X}", entry.file_offset),
-                            ]
-                        );
+                            let formatted_size = match binary_prefix(float_len) {
+                                Standalone(bytes) => format!("{} B", bytes),
+                                Prefixed(prefix, n) => format!("{:.2} {}B", n, prefix),
+                            };
+
+                            ei_store.insert_with_values(None,
+                                &[
+                                    Column::Name.into(),
+                                    Column::Type.into(),
+                                    Column::Size.into(),
+                                    Column::Offset.into(),
+                                ],
+                                &[
+                                    &entry.file_id.to_string(),
+                                    &table.header.file_extension(),
+                                    &formatted_size,
+                                    &format!("{:#X}", entry.file_offset),
+                                ]
+                            );
+                        }
                     }
                 }
 
