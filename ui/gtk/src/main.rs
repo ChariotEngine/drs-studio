@@ -86,7 +86,6 @@ fn main() {
     let archive_button: Button = builder.get_object("archive_file_button").unwrap();
 
     let extract_button: Button = builder.get_object("extract_button").unwrap();
-    extract_button.set_sensitive(false);
 
     let entryinfo_tree = {
         let t: TreeView = builder.get_object("entryinfo_tree").unwrap();
@@ -174,7 +173,6 @@ fn main() {
 
         if let Some(archive_path) = archive_entrybox_clone.get_text() {
             if !archive_path.is_empty() {
-                extract_button1.set_sensitive(false);
 
                 let mut a = Archive::read_from_file(&archive_path).unwrap();
                 {
@@ -214,7 +212,7 @@ fn main() {
         }
     });
 
-/*
+    let archive_entrybox_clone2 = archive_entrybox.clone();
     let archive2 = archive.clone();
     extract_button.connect_clicked(move |_this| {
         let sel = entryinfo_tree.get_selection();
@@ -244,47 +242,59 @@ fn main() {
 
         dialog.destroy();
 
-        let mut a = archive2.borrow_mut();
-        let a = a.as_mut().unwrap();
-        let table = a.read_entry_metadata_table().unwrap();
+        if let Some(archive_path) = archive_entrybox_clone2.get_text() {
+            if !archive_path.is_empty() {
+                let mut a = Archive::read_from_file(&archive_path).unwrap();
+                let tables = &a.tables;
 
-        if sel_paths.len() == 0 {
-            sel.select_all();
-            let (s, _) = sel.get_selected_rows();
-            sel_paths = s;
-            sel.unselect_all();
-        }
+                if sel_paths.len() == 0 {
+                    sel.select_all();
+                    let (s, _) = sel.get_selected_rows();
+                    sel_paths = s;
+                    sel.unselect_all();
+                }
 
-        for sel_path in sel_paths {
-            if let Some(iter) = model.get_iter(&sel_path) {
-                let val = model.get_value(&iter, 0);
-                let name = val
-                    .get::<String>()
-                    .expect(&format!("Unable to convert gtk::Type::String {:?} to a Rust String", val));
+                for sel_path in sel_paths {
+                    if let Some(iter) = model.get_iter(&sel_path) {
+                        let val = model.get_value(&iter, 0);
+                        let name = val
+                            .get::<String>()
+                            .expect(&format!("Unable to convert gtk::Type::String {:?} to a Rust String", val));
 
-                if let Some(data) = a.get_bytes_via_table(&table, &name) {
-                    let mut output_filepath = dest_dir_path.clone();
-                    output_filepath.push(name.replace("\\", "/"));
+                        let empty_vec: Vec<u8> = Vec::new();
+                        let data = {
+                            let mut res: &Vec<u8> = &empty_vec;
+                            for table in tables.iter() {
+                                let file_id = name.parse::<u32>().unwrap();
+                                match table.find_file_contents(file_id) {
+                                    Some(contents) => res = &contents,
+                                    None => res = res,
+                                }
+                            }
+                            res
+                        };
+                        let mut output_filepath = dest_dir_path.clone();
+                        output_filepath.push(name.replace("\\", "/"));
 
-                    let parent = output_filepath.parent()
-                        .expect(&format!("Unable to determine parent path of {:?}", &output_filepath));
+                        let parent = output_filepath.parent()
+                            .expect(&format!("Unable to determine parent path of {:?}", &output_filepath));
 
-                    fs::create_dir_all(&parent)
-                        .expect("Failed to create necessary parent directories");
-                    let mut f = OpenOptions::new()
-                        .create(true)
-                        .read(true)
-                        .write(true)
-                        .truncate(true)
-                        .open(&output_filepath)
-                        .expect(&format!("Failed to open file {:?} for writing", output_filepath));
+                        fs::create_dir_all(&parent)
+                            .expect("Failed to create necessary parent directories");
+                        let mut f = OpenOptions::new()
+                            .create(true)
+                            .read(true)
+                            .write(true)
+                            .truncate(true)
+                            .open(&output_filepath)
+                            .expect(&format!("Failed to open file {:?} for writing", output_filepath));
 
-                    f.write(data).expect("Failed to write data");
+                        f.write(data).expect("Failed to write data");
+                    }
                 }
             }
         }
     });
-    */
 
     window.connect_delete_event(|_, _| {
         gtk::main_quit();
