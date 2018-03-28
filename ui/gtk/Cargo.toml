@@ -4,7 +4,7 @@ name = "drs-studio-gtk"
 version = "0.0.1"
 
 [dependencies]
-chariot_drs = "0.1.2"
+chariot_drs = { git = "https://github.com/ghallak/Drs.git" }
 gdk = "0.7.0"
 gtk = "0.3.0"
 number_prefix = "0.2.7"

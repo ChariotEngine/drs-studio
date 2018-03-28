@@ -1,12 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::rc::Rc;
-use std::cell::RefCell;
+use std::cell::Cell;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
+use std::path::PathBuf;
 
 extern crate chariot_drs as lib;
-use lib::{DrsFile as Archive, DrsFileType};
+use lib::{DrsFile as Archive, DrsMetadataTable as ArchiveTable};
 
 extern crate number_prefix;
 use number_prefix::{binary_prefix, Standalone, Prefixed};
@@ -76,176 +77,128 @@ impl Into<i32> for Column {
     }
 }
 
-fn main() {
-    gtk::init().unwrap();
+macro_rules! add_column {
+    ($tree:ident, $title:expr, $id:expr) => {{
+        let column = TreeViewColumn::new();
+        let renderer = gtk::CellRendererText::new();
+        column.set_title($title);
+        column.set_resizable(true);
+        column.pack_start(&renderer, true);
+        column.add_attribute(&renderer, "text", $id);
+        $tree.append_column(&column);
+    }}
+}
 
-    let builder = Builder::new();
-    builder.add_from_string(include_str!("../ui.glade")).unwrap();
-    let window: Window = builder.get_object("main_window").unwrap();
-    let archive_entrybox: EntryBox = builder.get_object("archive_file_entry").unwrap();
-    let archive_button: Button = builder.get_object("archive_file_button").unwrap();
-
-    let extract_button: Button = builder.get_object("extract_button").unwrap();
-
-    let entryinfo_tree = {
-        let t: TreeView = builder.get_object("entryinfo_tree").unwrap();
-        let sel = t.get_selection();
-        sel.set_mode(gtk::SelectionMode::Multiple);
-        t
+fn setup_tree(tree: TreeView, extract_button: Button) {
+    let sel = tree.get_selection();
+    let model = match tree.get_model() {
+        Some(m) => m,
+        _ => return,
     };
 
-    window.set_title("DRS Studio");
-    window.set_position(gtk::WindowPosition::Center);
-    window.get_preferred_width();
-    window.set_default_size(1440, 900);
+    sel.connect_changed(move |this| {
+        // TODO: Do all of this when an archive is opened, too.
+        let selected_count = this.count_selected_rows();
+        let store_len = model.iter_n_children(None);
 
-    let ei_store = ListStore::new(&[Type::String, Type::String, Type::String, Type::String]);
-
-    macro_rules! add_column {
-        ($tree:ident, $title:expr, $id:expr) => {{
-            let column = TreeViewColumn::new();
-            let renderer = gtk::CellRendererText::new();
-            column.set_title($title);
-            column.set_resizable(true);
-            column.pack_start(&renderer, true);
-            column.add_attribute(&renderer, "text", $id);
-            $tree.append_column(&column);
-        }}
-    }
-
-    entryinfo_tree.set_model(Some(&ei_store));
-    entryinfo_tree.set_headers_visible(true);
-
-    add_column!(entryinfo_tree, "Name", Column::Name.into());
-    add_column!(entryinfo_tree, "Type", Column::Type.into());
-    add_column!(entryinfo_tree, "Size", Column::Size.into());
-    add_column!(entryinfo_tree, "Offset", Column::Offset.into());
-
-    fn setup_tree(tree: TreeView, extract_button: Button) {
-        let sel = tree.get_selection();
-        let model = match tree.get_model() {
-            Some(m) => m,
-            _ => return,
+        let count_str = if selected_count == 0 || selected_count == store_len {
+            "all".into()
+        } else {
+            format!("({})", selected_count)
         };
 
-        sel.connect_changed(move |this| {
-            // TODO: Do all of this when an archive is opened, too.
-            let selected_count = this.count_selected_rows();
-            let store_len = model.iter_n_children(None);
+        extract_button.set_label(&format!("Extract {}", count_str))
+    });
+}
 
-            let count_str = if selected_count == 0 || selected_count == store_len {
-                "all".into()
-            } else {
-                format!("({})", selected_count)
-            };
+fn select_dir_dialog(title: &str,
+                 window_type: gtk::WindowType,
+                 action: gtk::FileChooserAction) -> Option<PathBuf> {
+    let dialog = FileChooserDialog::new(
+        Some(title),
+        Some(&Window::new(window_type)),
+        action,
+    );
 
-            extract_button.set_label(&format!("Extract {}", count_str))
-        });
-    }
+    dialog.add_button("_Cancel", gtk::ResponseType::Cancel.into());
+    match action {
+        gtk::FileChooserAction::Open => {
+            dialog.add_button("_Open", gtk::ResponseType::Ok.into());
+        },
+        gtk::FileChooserAction::SelectFolder => {
+            dialog.add_button("_Select", gtk::ResponseType::Ok.into());
+        },
+        _ => (),
+    };
 
-    setup_tree(entryinfo_tree.clone(), extract_button.clone());
+    let path = if dialog.run() == gtk::ResponseType::Ok.into() {
+        dialog.get_filename()
+    } else {
+        None
+    };
 
-    let archive: Rc<RefCell<Option<Archive>>> = Rc::new(RefCell::new(None));
-    // TODO
-    // let archive_table: Rc<RefCell<Option<HashMap<String, EntryInfo>>>> = Rc::new(RefCell::new(None));
+    dialog.destroy();
 
-    let archive_entrybox_clone = archive_entrybox.clone();
-    let archive1 = archive.clone();
-    let extract_button1 = extract_button.clone();
+    path
+}
 
+fn enable_archive_button(archive_table: Rc<Cell<Option<ArchiveTable>>>,
+                         extract_button: Button,
+                         archive_button: Button,
+                         archive_entrybox: EntryBox,
+                         ei_store: ListStore) {
     archive_button.connect_clicked(move |_this| {
-        let dialog = FileChooserDialog::new(
-            Some("Select a DRS archive"),
-            Some(&Window::new(WindowType::Popup)),
-            gtk::FileChooserAction::Open
-        );
-
-        dialog.add_button("_Cancel", gtk::ResponseType::Cancel.into());
-        dialog.add_button("_Open", gtk::ResponseType::Ok.into());
-
-        if dialog.run() == gtk::ResponseType::Ok.into() {
-            dialog.get_filename().map(|path| path.to_str().map(|s| archive_entrybox_clone.set_text(s)));
-        } else {
-            archive_entrybox_clone.set_text("");
-        }
-
-        dialog.destroy();
-
-        if let Some(archive_path) = archive_entrybox_clone.get_text() {
-            if !archive_path.is_empty() {
-
-                let mut a = Archive::read_from_file(&archive_path).unwrap();
-                {
-                    let tables = &a.tables;
-
+        if let Some(archive_path) = select_dir_dialog("Select a DRS archive",
+                                                      WindowType::Popup,
+                                                      gtk::FileChooserAction::Open) {
+            if let Some(archive_path) = archive_path.to_str() {
+                if let Ok(archive) = Archive::read_from_file(&archive_path) {
                     ei_store.clear();
+                    extract_button.set_sensitive(true);
+                    archive_entrybox.set_text(archive_path);
 
-                    for table in tables.iter() {
-                        for entry in table.entries.iter() {
-                            let float_len = entry.file_size as f32;
+                    let table = ArchiveTable::new(archive);
 
-                            let formatted_size = match binary_prefix(float_len) {
-                                Standalone(bytes) => format!("{} B", bytes),
-                                Prefixed(prefix, n) => format!("{:.2} {}B", n, prefix),
-                            };
+                    for entry in &table.entries {
+                        let float_len = entry.file_size as f32;
 
-                            ei_store.insert_with_values(None,
-                                &[
-                                    Column::Name.into(),
-                                    Column::Type.into(),
-                                    Column::Size.into(),
-                                    Column::Offset.into(),
-                                ],
-                                &[
-                                    &entry.file_id.to_string(),
-                                    &table.header.file_extension(),
-                                    &formatted_size,
-                                    &format!("{:#X}", entry.file_offset),
-                                ]
-                            );
-                        }
+                        let formatted_size = match binary_prefix(float_len) {
+                            Standalone(bytes) => format!("{} B", bytes),
+                            Prefixed(prefix, n) => format!("{:.2} {}B", n, prefix),
+                        };
+
+                        ei_store.insert_with_values(None,
+                            &[
+                                Column::Name.into(),
+                                Column::Type.into(),
+                                Column::Size.into(),
+                                Column::Offset.into(),
+                            ],
+                            &[
+                                &entry.file_id.to_string(),
+                                &format!("{:?}", entry.file_type),
+                                &formatted_size,
+                                &format!("{:#X}", entry.file_offset),
+                            ]
+                        );
                     }
+                    archive_table.replace(Some(table));
                 }
-
-                *archive1.borrow_mut() = Some(a);
             }
         }
     });
+}
 
-    let archive_entrybox_clone2 = archive_entrybox.clone();
-    let archive2 = archive.clone();
+fn enable_extract_button(archive_table: Rc<Cell<Option<ArchiveTable>>>,
+                         extract_button: Button,
+                         entryinfo_tree: TreeView) {
     extract_button.connect_clicked(move |_this| {
-        let sel = entryinfo_tree.get_selection();
-        let (mut sel_paths, model) = sel.get_selected_rows();
-
-        let dialog = FileChooserDialog::new(
-            Some("Select a directory to extract to"),
-            Some(&Window::new(WindowType::Toplevel)),
-            gtk::FileChooserAction::SelectFolder
-        );
-
-        dialog.add_button("_Cancel", gtk::ResponseType::Cancel.into());
-        dialog.add_button("_Select", gtk::ResponseType::Ok.into());
-
-        let dest_dir_path = if dialog.run() == gtk::ResponseType::Ok.into() {
-            match dialog.get_filename() {
-                Some(filename) => filename,
-                None => {
-                    dialog.destroy();
-                    return;
-                }
-            }
-        } else {
-            dialog.destroy();
-            return;
-        };
-
-        dialog.destroy();
-
-        if let Some(archive_path) = archive_entrybox_clone2.get_text() {
-            if !archive_path.is_empty() {
-                let mut a = Archive::read_from_file(&archive_path).unwrap();
-                let tables = &a.tables;
+        if let Some(dest_dir_path) = select_dir_dialog("Select a directory to extract to",
+                                                       WindowType::Toplevel,
+                                                       gtk::FileChooserAction::SelectFolder) {
+            if let Some(table) = archive_table.take() {
+                let sel = entryinfo_tree.get_selection();
+                let (mut sel_paths, model) = sel.get_selected_rows();
 
                 if sel_paths.len() == 0 {
                     sel.select_all();
@@ -261,18 +214,7 @@ fn main() {
                             .get::<String>()
                             .expect(&format!("Unable to convert gtk::Type::String {:?} to a Rust String", val));
 
-                        let empty_vec: Vec<u8> = Vec::new();
-                        let data = {
-                            let mut res: &Vec<u8> = &empty_vec;
-                            for table in tables.iter() {
-                                let file_id = name.parse::<u32>().unwrap();
-                                match table.find_file_contents(file_id) {
-                                    Some(contents) => res = &contents,
-                                    None => res = res,
-                                }
-                            }
-                            res
-                        };
+                        let data = table.get_file_contents(name.parse::<u32>().unwrap()).unwrap();
                         let mut output_filepath = dest_dir_path.clone();
                         output_filepath.push(name.replace("\\", "/"));
 
@@ -292,9 +234,53 @@ fn main() {
                         f.write(data).expect("Failed to write data");
                     }
                 }
+                archive_table.replace(Some(table));
             }
         }
     });
+}
+
+fn main() {
+    gtk::init().unwrap();
+
+    let builder = Builder::new();
+    builder.add_from_string(include_str!("../ui.glade")).unwrap();
+    let window: Window = builder.get_object("main_window").unwrap();
+    let archive_entrybox: EntryBox = builder.get_object("archive_file_entry").unwrap();
+    let archive_button: Button = builder.get_object("archive_file_button").unwrap();
+
+    let extract_button: Button = builder.get_object("extract_button").unwrap();
+    extract_button.set_sensitive(false);
+
+    let entryinfo_tree = {
+        let t: TreeView = builder.get_object("entryinfo_tree").unwrap();
+        let sel = t.get_selection();
+        sel.set_mode(gtk::SelectionMode::Multiple);
+        t
+    };
+
+    window.set_title("DRS Studio");
+    window.set_position(gtk::WindowPosition::Center);
+    window.get_preferred_width();
+    window.set_default_size(1440, 900);
+
+    let ei_store = ListStore::new(&[Type::String, Type::String, Type::String, Type::String]);
+
+    entryinfo_tree.set_model(Some(&ei_store));
+    entryinfo_tree.set_headers_visible(true);
+
+    add_column!(entryinfo_tree, "Name", Column::Name.into());
+    add_column!(entryinfo_tree, "Type", Column::Type.into());
+    add_column!(entryinfo_tree, "Size", Column::Size.into());
+    add_column!(entryinfo_tree, "Offset", Column::Offset.into());
+
+    setup_tree(entryinfo_tree.clone(), extract_button.clone());
+
+    let archive_table: Rc<Cell<Option<ArchiveTable>>> = Rc::new(Cell::new(None));
+
+    enable_archive_button(archive_table.clone(), extract_button.clone(), archive_button.clone(),
+                          archive_entrybox.clone(), ei_store);
+    enable_extract_button(archive_table.clone(), extract_button.clone(), entryinfo_tree);
 
     window.connect_delete_event(|_, _| {
         gtk::main_quit();
