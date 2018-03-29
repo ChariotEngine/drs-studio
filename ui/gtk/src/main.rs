@@ -5,9 +5,10 @@ use std::cell::Cell;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
+use std::u32;
 
 extern crate chariot_drs as lib;
-use lib::{DrsFile as Archive, DrsMetadataTable as ArchiveTable};
+use lib::{DrsFile as Archive};
 
 extern crate number_prefix;
 use number_prefix::{binary_prefix, Standalone, Prefixed};
@@ -42,6 +43,7 @@ use gtk::{
     ListStoreExtManual,
     TreeModelExt,
     TreeSelectionExt,
+    TreeSortableExtManual,
     TreeViewExt,
     TreeViewColumnExt,
     WidgetExt,
@@ -86,6 +88,20 @@ macro_rules! add_column {
         column.pack_start(&renderer, true);
         column.add_attribute(&renderer, "text", $id);
         $tree.append_column(&column);
+    }}
+}
+
+macro_rules! add_sort_func {
+    ($tree:ident, $store:ident, $convert:ident, $col:expr) => {{
+        let store_clone = $store.clone();
+        $store.set_sort_func(gtk::SortColumn::Index($col.into()), move |_this, a, b| {
+            let string_at_iter = |iter| store_clone.get_value(iter, $col.into()).get::<String>().unwrap();
+            let a = $convert(string_at_iter(a));
+            let b = $convert(string_at_iter(b));
+            a.cmp(&b)
+        });
+
+        $tree.get_column($col.into()).unwrap().set_sort_column_id($col.into());
     }}
 }
 
@@ -142,7 +158,7 @@ fn select_dir_dialog(title: &str,
     path
 }
 
-fn enable_archive_button(archive_table: Rc<Cell<Option<ArchiveTable>>>,
+fn enable_archive_button(archive: Rc<Cell<Option<Archive>>>,
                          extract_button: Button,
                          archive_button: Button,
                          archive_entrybox: EntryBox,
@@ -152,51 +168,52 @@ fn enable_archive_button(archive_table: Rc<Cell<Option<ArchiveTable>>>,
                                                       WindowType::Popup,
                                                       gtk::FileChooserAction::Open) {
             if let Some(archive_path) = archive_path.to_str() {
-                if let Ok(archive) = Archive::read_from_file(&archive_path) {
+                if let Ok(arch) = Archive::read_from_file(&archive_path) {
                     ei_store.clear();
                     extract_button.set_sensitive(true);
                     archive_entrybox.set_text(archive_path);
 
-                    let table = ArchiveTable::new(archive);
+                    for table in arch.tables.iter() {
+                        for entry in table.entries.iter() {
+                            let float_len = entry.file_size as f32;
 
-                    for entry in &table.entries {
-                        let float_len = entry.file_size as f32;
+                            let formatted_size = match binary_prefix(float_len) {
+                                Standalone(bytes) => format!("{} B", bytes),
+                                Prefixed(prefix, n) => format!("{:.2} {}B", n, prefix),
+                            };
 
-                        let formatted_size = match binary_prefix(float_len) {
-                            Standalone(bytes) => format!("{} B", bytes),
-                            Prefixed(prefix, n) => format!("{:.2} {}B", n, prefix),
-                        };
-
-                        ei_store.insert_with_values(None,
-                            &[
-                                Column::Name.into(),
-                                Column::Type.into(),
-                                Column::Size.into(),
-                                Column::Offset.into(),
-                            ],
-                            &[
-                                &entry.file_id.to_string(),
-                                &format!("{:?}", entry.file_type),
-                                &formatted_size,
-                                &format!("{:#X}", entry.file_offset),
-                            ]
-                        );
+                            ei_store.insert_with_values(None,
+                                &[
+                                    Column::Name.into(),
+                                    Column::Type.into(),
+                                    Column::Size.into(),
+                                    Column::Offset.into(),
+                                ],
+                                &[
+                                    &entry.file_id.to_string(),
+                                    &table.header.file_extension(),
+                                    &formatted_size,
+                                    &format!("{:#X}", entry.file_offset),
+                                ]
+                            );
+                        }
                     }
-                    archive_table.replace(Some(table));
+
+                    archive.replace(Some(arch));
                 }
             }
         }
     });
 }
 
-fn enable_extract_button(archive_table: Rc<Cell<Option<ArchiveTable>>>,
+fn enable_extract_button(archive: Rc<Cell<Option<Archive>>>,
                          extract_button: Button,
                          entryinfo_tree: TreeView) {
     extract_button.connect_clicked(move |_this| {
         if let Some(dest_dir_path) = select_dir_dialog("Select a directory to extract to",
                                                        WindowType::Toplevel,
                                                        gtk::FileChooserAction::SelectFolder) {
-            if let Some(table) = archive_table.take() {
+            if let Some(arch) = archive.take() {
                 let sel = entryinfo_tree.get_selection();
                 let (mut sel_paths, model) = sel.get_selected_rows();
 
@@ -214,30 +231,68 @@ fn enable_extract_button(archive_table: Rc<Cell<Option<ArchiveTable>>>,
                             .get::<String>()
                             .expect(&format!("Unable to convert gtk::Type::String {:?} to a Rust String", val));
 
-                        let data = table.get_file_contents(name.parse::<u32>().unwrap()).unwrap();
-                        let mut output_filepath = dest_dir_path.clone();
-                        output_filepath.push(name.replace("\\", "/"));
+                        for table in arch.tables.iter() {
+                            if let Some(data) = table.find_file_contents(name.parse::<u32>().unwrap()) {
+                                let mut output_filepath = dest_dir_path.clone();
+                                output_filepath.push(name.replace("\\", "/"));
 
-                        let parent = output_filepath.parent()
-                            .expect(&format!("Unable to determine parent path of {:?}", &output_filepath));
+                                let parent = output_filepath.parent()
+                                    .expect(&format!("Unable to determine parent path of {:?}", &output_filepath));
 
-                        fs::create_dir_all(&parent)
-                            .expect("Failed to create necessary parent directories");
-                        let mut f = OpenOptions::new()
-                            .create(true)
-                            .read(true)
-                            .write(true)
-                            .truncate(true)
-                            .open(&output_filepath)
-                            .expect(&format!("Failed to open file {:?} for writing", output_filepath));
+                                fs::create_dir_all(&parent)
+                                    .expect("Failed to create necessary parent directories");
+                                let mut f = OpenOptions::new()
+                                    .create(true)
+                                    .read(true)
+                                    .write(true)
+                                    .truncate(true)
+                                    .open(&output_filepath)
+                                    .expect(&format!("Failed to open file {:?} for writing", output_filepath));
 
-                        f.write(data).expect("Failed to write data");
+                                f.write(data).expect("Failed to write data");
+                            }
+                        }
                     }
                 }
-                archive_table.replace(Some(table));
+
+                archive.replace(Some(arch));
             }
         }
     });
+}
+
+fn enable_sortable_cols(ei_store: &ListStore, entryinfo_tree: &TreeView) {
+    // Values in the table are strings. They should be converted back
+    // to their original type to make the sort function work properly
+
+    fn convert_name(s: String) -> u32 {
+        s.parse::<u32>().unwrap()
+    }
+
+    fn convert_type(s: String) -> String {
+        s
+    }
+
+    fn convert_size(s: String) -> u32 {
+        let v = s.split(' ').collect::<Vec<&str>>();
+        let exp = match v.get(1) {
+            Some(&"B") => 0,
+            Some(&"KiB") => 1,
+            Some(&"MiB") => 2,
+            Some(&"GiB") => 3,
+            _ => panic!("Unabel to convert size: `{}`", s)
+        };
+        (1024u32.pow(exp) as f32 * v[0].parse::<f32>().unwrap()) as u32
+    }
+
+    fn convert_offset(s: String) -> u32 {
+        u32::from_str_radix(&s[2..], 16).unwrap()
+    }
+
+    add_sort_func!(entryinfo_tree, ei_store, convert_name, Column::Name);
+    add_sort_func!(entryinfo_tree, ei_store, convert_type, Column::Type);
+    add_sort_func!(entryinfo_tree, ei_store, convert_size, Column::Size);
+    add_sort_func!(entryinfo_tree, ei_store, convert_offset, Column::Offset);
 }
 
 fn main() {
@@ -276,11 +331,13 @@ fn main() {
 
     setup_tree(entryinfo_tree.clone(), extract_button.clone());
 
-    let archive_table: Rc<Cell<Option<ArchiveTable>>> = Rc::new(Cell::new(None));
+    let archive: Rc<Cell<Option<Archive>>> = Rc::new(Cell::new(None));
 
-    enable_archive_button(archive_table.clone(), extract_button.clone(), archive_button.clone(),
+    enable_sortable_cols(&ei_store, &entryinfo_tree);
+
+    enable_archive_button(archive.clone(), extract_button.clone(), archive_button.clone(),
                           archive_entrybox.clone(), ei_store);
-    enable_extract_button(archive_table.clone(), extract_button.clone(), entryinfo_tree);
+    enable_extract_button(archive.clone(), extract_button.clone(), entryinfo_tree);
 
     window.connect_delete_event(|_, _| {
         gtk::main_quit();
