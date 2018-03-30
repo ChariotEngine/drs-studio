@@ -222,9 +222,8 @@ fn enable_extract_button(
                                 table.find_file_contents(name.parse::<u32>().unwrap())
                             {
                                 let mut output_filepath = dest_dir_path.clone();
-                                output_filepath.push(
-                                    name.replace("\\", "/") + "." + table.header.file_extension(),
-                                );
+                                output_filepath.push(name.replace("\\", "/"));
+                                output_filepath.set_extension(table.header.file_extension());
 
                                 let parent = output_filepath.parent().expect(&format!(
                                     "Unable to determine parent path of {:?}",
