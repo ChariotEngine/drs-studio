@@ -8,46 +8,22 @@ use std::path::PathBuf;
 use std::u32;
 
 extern crate chariot_drs as lib;
-use lib::{DrsFile as Archive};
+use lib::DrsFile as Archive;
 
 extern crate number_prefix;
-use number_prefix::{binary_prefix, Standalone, Prefixed};
+use number_prefix::{binary_prefix, Prefixed, Standalone};
 
 extern crate gdk;
 
 extern crate gtk;
 use gtk::prelude::Inhibit;
 
-use gtk::{
-    Builder,
-    Window,
-    WindowType,
-    Button,
-    Entry as EntryBox,
-    FileChooserDialog,
-    ListStore,
-    Type,
-    TreeView,
-    TreeViewColumn
-};
+use gtk::{Builder, Button, Entry as EntryBox, FileChooserDialog, ListStore, TreeView,
+          TreeViewColumn, Type, Window, WindowType};
 
-use gtk::{
-    BuilderExt,
-    ButtonExt,
-    CellLayoutExt,
-    DialogExt,
-    EntryExt,
-    FileChooserExt,
-    GtkWindowExt,
-    ListStoreExt,
-    ListStoreExtManual,
-    TreeModelExt,
-    TreeSelectionExt,
-    TreeSortableExtManual,
-    TreeViewExt,
-    TreeViewColumnExt,
-    WidgetExt,
-};
+use gtk::{BuilderExt, ButtonExt, CellLayoutExt, DialogExt, EntryExt, FileChooserExt, GtkWindowExt,
+          ListStoreExt, ListStoreExtManual, TreeModelExt, TreeSelectionExt, TreeSortableExtManual,
+          TreeViewColumnExt, TreeViewExt, WidgetExt};
 
 #[derive(Debug, PartialEq, Eq)]
 enum Column {
@@ -95,7 +71,9 @@ macro_rules! add_sort_func {
     ($tree:ident, $store:ident, $convert:ident, $col:expr) => {{
         let store_clone = $store.clone();
         $store.set_sort_func(gtk::SortColumn::Index($col.into()), move |_this, a, b| {
-            let string_at_iter = |iter| store_clone.get_value(iter, $col.into()).get::<String>().unwrap();
+            let string_at_iter = |iter| store_clone.get_value(iter, $col.into())
+                                                   .get::<String>()
+                                                   .unwrap();
             let a = $convert(string_at_iter(a));
             let b = $convert(string_at_iter(b));
             a.cmp(&b)
@@ -127,23 +105,21 @@ fn setup_tree(tree: TreeView, extract_button: Button) {
     });
 }
 
-fn select_dir_dialog(title: &str,
-                 window_type: gtk::WindowType,
-                 action: gtk::FileChooserAction) -> Option<PathBuf> {
-    let dialog = FileChooserDialog::new(
-        Some(title),
-        Some(&Window::new(window_type)),
-        action,
-    );
+fn select_dir_dialog(
+    title: &str,
+    window_type: gtk::WindowType,
+    action: gtk::FileChooserAction,
+) -> Option<PathBuf> {
+    let dialog = FileChooserDialog::new(Some(title), Some(&Window::new(window_type)), action);
 
     dialog.add_button("_Cancel", gtk::ResponseType::Cancel.into());
     match action {
         gtk::FileChooserAction::Open => {
             dialog.add_button("_Open", gtk::ResponseType::Ok.into());
-        },
+        }
         gtk::FileChooserAction::SelectFolder => {
             dialog.add_button("_Select", gtk::ResponseType::Ok.into());
-        },
+        }
         _ => (),
     };
 
@@ -158,15 +134,19 @@ fn select_dir_dialog(title: &str,
     path
 }
 
-fn enable_archive_button(archive: Rc<Cell<Option<Archive>>>,
-                         extract_button: Button,
-                         archive_button: Button,
-                         archive_entrybox: EntryBox,
-                         ei_store: ListStore) {
+fn enable_archive_button(
+    archive: Rc<Cell<Option<Archive>>>,
+    extract_button: Button,
+    archive_button: Button,
+    archive_entrybox: EntryBox,
+    ei_store: ListStore,
+) {
     archive_button.connect_clicked(move |_this| {
-        if let Some(archive_path) = select_dir_dialog("Select a DRS archive",
-                                                      WindowType::Popup,
-                                                      gtk::FileChooserAction::Open) {
+        if let Some(archive_path) = select_dir_dialog(
+            "Select a DRS archive",
+            WindowType::Popup,
+            gtk::FileChooserAction::Open,
+        ) {
             if let Some(archive_path) = archive_path.to_str() {
                 if let Ok(arch) = Archive::read_from_file(&archive_path) {
                     ei_store.clear();
@@ -182,7 +162,8 @@ fn enable_archive_button(archive: Rc<Cell<Option<Archive>>>,
                                 Prefixed(prefix, n) => format!("{:.2} {}B", n, prefix),
                             };
 
-                            ei_store.insert_with_values(None,
+                            ei_store.insert_with_values(
+                                None,
                                 &[
                                     Column::Name.into(),
                                     Column::Type.into(),
@@ -194,7 +175,7 @@ fn enable_archive_button(archive: Rc<Cell<Option<Archive>>>,
                                     &table.header.file_extension(),
                                     &formatted_size,
                                     &format!("{:#X}", entry.file_offset),
-                                ]
+                                ],
                             );
                         }
                     }
@@ -206,13 +187,17 @@ fn enable_archive_button(archive: Rc<Cell<Option<Archive>>>,
     });
 }
 
-fn enable_extract_button(archive: Rc<Cell<Option<Archive>>>,
-                         extract_button: Button,
-                         entryinfo_tree: TreeView) {
+fn enable_extract_button(
+    archive: Rc<Cell<Option<Archive>>>,
+    extract_button: Button,
+    entryinfo_tree: TreeView,
+) {
     extract_button.connect_clicked(move |_this| {
-        if let Some(dest_dir_path) = select_dir_dialog("Select a directory to extract to",
-                                                       WindowType::Toplevel,
-                                                       gtk::FileChooserAction::SelectFolder) {
+        if let Some(dest_dir_path) = select_dir_dialog(
+            "Select a directory to extract to",
+            WindowType::Toplevel,
+            gtk::FileChooserAction::SelectFolder,
+        ) {
             if let Some(arch) = archive.take() {
                 let sel = entryinfo_tree.get_selection();
                 let (mut sel_paths, model) = sel.get_selected_rows();
@@ -227,17 +212,24 @@ fn enable_extract_button(archive: Rc<Cell<Option<Archive>>>,
                 for sel_path in sel_paths {
                     if let Some(iter) = model.get_iter(&sel_path) {
                         let val = model.get_value(&iter, 0);
-                        let name = val
-                            .get::<String>()
-                            .expect(&format!("Unable to convert gtk::Type::String {:?} to a Rust String", val));
+                        let name = val.get::<String>().expect(&format!(
+                            "Unable to convert gtk::Type::String {:?} to a Rust String",
+                            val
+                        ));
 
                         for table in arch.tables.iter() {
-                            if let Some(data) = table.find_file_contents(name.parse::<u32>().unwrap()) {
+                            if let Some(data) =
+                                table.find_file_contents(name.parse::<u32>().unwrap())
+                            {
                                 let mut output_filepath = dest_dir_path.clone();
-                                output_filepath.push(name.replace("\\", "/") + "." + table.header.file_extension());
+                                output_filepath.push(
+                                    name.replace("\\", "/") + "." + table.header.file_extension(),
+                                );
 
-                                let parent = output_filepath.parent()
-                                    .expect(&format!("Unable to determine parent path of {:?}", &output_filepath));
+                                let parent = output_filepath.parent().expect(&format!(
+                                    "Unable to determine parent path of {:?}",
+                                    &output_filepath
+                                ));
 
                                 fs::create_dir_all(&parent)
                                     .expect("Failed to create necessary parent directories");
@@ -247,7 +239,10 @@ fn enable_extract_button(archive: Rc<Cell<Option<Archive>>>,
                                     .write(true)
                                     .truncate(true)
                                     .open(&output_filepath)
-                                    .expect(&format!("Failed to open file {:?} for writing", output_filepath));
+                                    .expect(&format!(
+                                        "Failed to open file {:?} for writing",
+                                        output_filepath
+                                    ));
 
                                 f.write(data).expect("Failed to write data");
                             }
@@ -280,7 +275,7 @@ fn enable_sortable_cols(ei_store: &ListStore, entryinfo_tree: &TreeView) {
             Some(&"KiB") => 1,
             Some(&"MiB") => 2,
             Some(&"GiB") => 3,
-            _ => panic!("Unabel to convert size: `{}`", s)
+            _ => panic!("Unabel to convert size: `{}`", s),
         };
         (1024u32.pow(exp) as f32 * v[0].parse::<f32>().unwrap()) as u32
     }
@@ -299,7 +294,9 @@ fn main() {
     gtk::init().unwrap();
 
     let builder = Builder::new();
-    builder.add_from_string(include_str!("../ui.glade")).unwrap();
+    builder
+        .add_from_string(include_str!("../ui.glade"))
+        .unwrap();
     let window: Window = builder.get_object("main_window").unwrap();
     let archive_entrybox: EntryBox = builder.get_object("archive_file_entry").unwrap();
     let archive_button: Button = builder.get_object("archive_file_button").unwrap();
@@ -335,8 +332,13 @@ fn main() {
 
     enable_sortable_cols(&ei_store, &entryinfo_tree);
 
-    enable_archive_button(archive.clone(), extract_button.clone(), archive_button.clone(),
-                          archive_entrybox.clone(), ei_store);
+    enable_archive_button(
+        archive.clone(),
+        extract_button.clone(),
+        archive_button.clone(),
+        archive_entrybox.clone(),
+        ei_store,
+    );
     enable_extract_button(archive.clone(), extract_button.clone(), entryinfo_tree);
 
     window.connect_delete_event(|_, _| {
