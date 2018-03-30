@@ -234,7 +234,7 @@ fn enable_extract_button(archive: Rc<Cell<Option<Archive>>>,
                         for table in arch.tables.iter() {
                             if let Some(data) = table.find_file_contents(name.parse::<u32>().unwrap()) {
                                 let mut output_filepath = dest_dir_path.clone();
-                                output_filepath.push(name.replace("\\", "/"));
+                                output_filepath.push(name.replace("\\", "/") + "." + table.header.file_extension());
 
                                 let parent = output_filepath.parent()
                                     .expect(&format!("Unable to determine parent path of {:?}", &output_filepath));
