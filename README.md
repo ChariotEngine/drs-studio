@@ -2,7 +2,11 @@
 
 [![Build Status](https://travis-ci.org/ChariotEngine/drs-studio.svg?branch=master)](https://travis-ci.org/ChariotEngine/drs-studio) [![Build Status](https://ci.appveyor.com/api/projects/status/github/ChariotEngine/drs-studio?branch=master&svg=true)](https://ci.appveyor.com/project/ChariotEngine/drs-studio) [![GitHub (pre-)release](https://img.shields.io/github/release/ChariotEngine/drs-studio/all.svg)](https://github.com/ChariotEngine/drs-studio/releases)
 
-A command-line utility for manipulating DRS archives.
+A tool for manipulating DRS archives.
+
+This repository consists of a command-line application and a GTK-based UI.
+
+See [ui/gtk/README.md](./ui/gtk/README.md) for information regarding the UI.
 
 ---
 
