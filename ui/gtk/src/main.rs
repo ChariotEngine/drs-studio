@@ -27,7 +27,7 @@ use gtk::{BuilderExt, ButtonExt, CellLayoutExt, DialogExt, EntryExt, FileChooser
 
 #[derive(Debug, PartialEq, Eq)]
 enum Column {
-    Name,
+    ID,
     Type,
     Size,
     Offset,
@@ -36,7 +36,7 @@ enum Column {
 impl Into<u32> for Column {
     fn into(self) -> u32 {
         match self {
-            Column::Name => 0,
+            Column::ID => 0,
             Column::Type => 1,
             Column::Size => 2,
             Column::Offset => 3,
@@ -47,7 +47,7 @@ impl Into<u32> for Column {
 impl Into<i32> for Column {
     fn into(self) -> i32 {
         match self {
-            Column::Name => 0,
+            Column::ID => 0,
             Column::Type => 1,
             Column::Size => 2,
             Column::Offset => 3,
@@ -165,7 +165,7 @@ fn enable_archive_button(
                             ei_store.insert_with_values(
                                 None,
                                 &[
-                                    Column::Name.into(),
+                                    Column::ID.into(),
                                     Column::Type.into(),
                                     Column::Size.into(),
                                     Column::Offset.into(),
@@ -283,7 +283,7 @@ fn enable_sortable_cols(ei_store: &ListStore, entryinfo_tree: &TreeView) {
         u32::from_str_radix(&s[2..], 16).unwrap()
     }
 
-    add_sort_func!(entryinfo_tree, ei_store, convert_name, Column::Name);
+    add_sort_func!(entryinfo_tree, ei_store, convert_name, Column::ID);
     add_sort_func!(entryinfo_tree, ei_store, convert_type, Column::Type);
     add_sort_func!(entryinfo_tree, ei_store, convert_size, Column::Size);
     add_sort_func!(entryinfo_tree, ei_store, convert_offset, Column::Offset);
@@ -320,7 +320,7 @@ fn main() {
     entryinfo_tree.set_model(Some(&ei_store));
     entryinfo_tree.set_headers_visible(true);
 
-    add_column!(entryinfo_tree, "Name", Column::Name.into());
+    add_column!(entryinfo_tree, "ID", Column::ID.into());
     add_column!(entryinfo_tree, "Type", Column::Type.into());
     add_column!(entryinfo_tree, "Size", Column::Size.into());
     add_column!(entryinfo_tree, "Offset", Column::Offset.into());
