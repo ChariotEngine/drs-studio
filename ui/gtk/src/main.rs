@@ -283,7 +283,7 @@ fn enable_sortable_cols(ei_store: &ListStore, entryinfo_tree: &TreeView) {
             Some(&"KiB") => 1,
             Some(&"MiB") => 2,
             Some(&"GiB") => 3,
-            _ => panic!("Unabel to convert size: `{}`", s),
+            _ => panic!("Unable to convert size: `{}`", s),
         };
         (1024u32.pow(exp) as f32 * v[0].parse::<f32>().unwrap()) as u32
     }
