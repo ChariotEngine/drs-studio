@@ -207,59 +207,66 @@ fn enable_extract_button(
             WindowType::Toplevel,
             gtk::FileChooserAction::SelectFolder,
         ) {
-            if let Some(arch) = archive.take() {
-                let sel = entryinfo_tree.get_selection();
-                let (mut sel_paths, model) = sel.get_selected_rows();
+            let arch = match archive.take() {
+                Some(a) => a,
+                _ => return,
+            };
 
-                if sel_paths.len() == 0 {
-                    sel.select_all();
-                    let (s, _) = sel.get_selected_rows();
-                    sel_paths = s;
-                    sel.unselect_all();
-                }
+            let sel = entryinfo_tree.get_selection();
+            let (mut sel_paths, model) = sel.get_selected_rows();
 
-                for sel_path in sel_paths {
-                    if let Some(iter) = model.get_iter(&sel_path) {
-                        let val = model.get_value(&iter, 0);
-                        let name = val.get::<String>().expect(&format!(
-                            "Unable to convert gtk::Type::String {:?} to a Rust String",
-                            val
+            if sel_paths.len() == 0 {
+                sel.select_all();
+                let (s, _) = sel.get_selected_rows();
+                sel_paths = s;
+                sel.unselect_all();
+            }
+
+            for sel_path in sel_paths {
+                let iter = match model.get_iter(&sel_path) {
+                    Some(i) => i,
+                    _ => continue,
+                };
+
+                let val = model.get_value(&iter, 0);
+                let name = val.get::<String>().expect(&format!(
+                    "Unable to convert gtk::Type::String {:?} to a Rust String",
+                    val
+                ));
+
+                for table in arch.tables.iter() {
+                    let data = match table.find_file_contents(name.parse::<u32>().unwrap()) {
+                        Some(d) => d,
+                        _ => continue,
+                    };
+
+                    let mut output_filepath = dest_dir_path.clone();
+                    output_filepath.push(name.replace("\\", "/"));
+                    output_filepath.set_extension(table.header.file_extension());
+
+                    let parent = output_filepath.parent().expect(&format!(
+                        "Unable to determine parent path of {:?}",
+                        &output_filepath
+                    ));
+
+                    fs::create_dir_all(&parent)
+                        .expect("Failed to create necessary parent directories");
+                    let mut f = OpenOptions::new()
+                        .create(true)
+                        .read(true)
+                        .write(true)
+                        .truncate(true)
+                        .open(&output_filepath)
+                        .expect(&format!(
+                            "Failed to open file {:?} for writing",
+                            output_filepath
                         ));
 
-                        for table in arch.tables.iter() {
-                            if let Some(data) =
-                                table.find_file_contents(name.parse::<u32>().unwrap())
-                            {
-                                let mut output_filepath = dest_dir_path.clone();
-                                output_filepath.push(name.replace("\\", "/"));
-                                output_filepath.set_extension(table.header.file_extension());
-
-                                let parent = output_filepath.parent().expect(&format!(
-                                    "Unable to determine parent path of {:?}",
-                                    &output_filepath
-                                ));
-
-                                fs::create_dir_all(&parent)
-                                    .expect("Failed to create necessary parent directories");
-                                let mut f = OpenOptions::new()
-                                    .create(true)
-                                    .read(true)
-                                    .write(true)
-                                    .truncate(true)
-                                    .open(&output_filepath)
-                                    .expect(&format!(
-                                        "Failed to open file {:?} for writing",
-                                        output_filepath
-                                    ));
-
-                                f.write(data).expect("Failed to write data");
-                            }
-                        }
-                    }
+                    f.write(data).expect("Failed to write data");
                 }
-
-                archive.replace(Some(arch));
             }
+
+            archive.replace(Some(arch));
         }
     });
 }
