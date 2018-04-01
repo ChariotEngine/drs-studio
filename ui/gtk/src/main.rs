@@ -142,48 +142,57 @@ fn enable_archive_button(
     ei_store: ListStore,
 ) {
     archive_button.connect_clicked(move |_this| {
-        if let Some(archive_path) = select_dir_dialog(
+        let archive_path = match select_dir_dialog(
             "Select a DRS archive",
             WindowType::Popup,
             gtk::FileChooserAction::Open,
         ) {
-            if let Some(archive_path) = archive_path.to_str() {
-                if let Ok(arch) = Archive::read_from_file(&archive_path) {
-                    ei_store.clear();
-                    extract_button.set_sensitive(true);
-                    archive_entrybox.set_text(archive_path);
+            Some(p) => p,
+            _ => return,
+        };
 
-                    for table in arch.tables.iter() {
-                        for entry in table.entries.iter() {
-                            let float_len = entry.file_size as f32;
+        let archive_path = match archive_path.to_str() {
+            Some(p) => p,
+            _ => return,
+        };
 
-                            let formatted_size = match binary_prefix(float_len) {
-                                Standalone(bytes) => format!("{} B", bytes),
-                                Prefixed(prefix, n) => format!("{:.2} {}B", n, prefix),
-                            };
+        let arch = match Archive::read_from_file(archive_path) {
+            Ok(a) => a,
+            _ => return,
+        };
 
-                            ei_store.insert_with_values(
-                                None,
-                                &[
-                                    Column::ID.into(),
-                                    Column::Type.into(),
-                                    Column::Size.into(),
-                                    Column::Offset.into(),
-                                ],
-                                &[
-                                    &entry.file_id.to_string(),
-                                    &table.header.file_extension(),
-                                    &formatted_size,
-                                    &format!("{:#X}", entry.file_offset),
-                                ],
-                            );
-                        }
-                    }
+        ei_store.clear();
+        extract_button.set_sensitive(true);
+        archive_entrybox.set_text(archive_path);
 
-                    archive.replace(Some(arch));
-                }
+        for table in arch.tables.iter() {
+            for entry in table.entries.iter() {
+                let float_len = entry.file_size as f32;
+
+                let formatted_size = match binary_prefix(float_len) {
+                    Standalone(bytes) => format!("{} B", bytes),
+                    Prefixed(prefix, n) => format!("{:.2} {}B", n, prefix),
+                };
+
+                ei_store.insert_with_values(
+                    None,
+                    &[
+                        Column::ID.into(),
+                        Column::Type.into(),
+                        Column::Size.into(),
+                        Column::Offset.into(),
+                    ],
+                    &[
+                        &entry.file_id.to_string(),
+                        &table.header.file_extension(),
+                        &formatted_size,
+                        &format!("{:#X}", entry.file_offset),
+                    ],
+                );
             }
         }
+
+        archive.replace(Some(arch));
     });
 }
 
